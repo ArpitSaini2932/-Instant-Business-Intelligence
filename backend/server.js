@@ -97,21 +97,18 @@ return true
 }
 
 /* -------------------------
-   CHART SELECTION LOGIC
+   CHART SELECTION
 --------------------------*/
 
 function chooseChart(sql){
 
 const s = sql.toLowerCase()
 
-if(s.includes("date") || s.includes("month"))
+if(s.includes("strftime") || s.includes("date") || s.includes("month"))
 return "line"
 
 if(s.includes("group by"))
 return "bar"
-
-if(s.includes("percentage") || s.includes("share"))
-return "pie"
 
 return "bar"
 
@@ -126,30 +123,28 @@ async function generateSQL(userQuery){
 const schema = await getDatabaseSchema()
 
 const prompt = `
-You are an expert data analyst.
+You are a senior data analyst.
 
-Your job is to convert business questions into SQL queries.
+Convert the user's business question into a SQL query.
 
 Database schema:
 ${schema}
 
-Steps to follow:
-1. Understand the business question.
-2. Identify relevant tables.
-3. Decide aggregation (SUM, COUNT, AVG etc.).
-4. Decide grouping column.
-5. Write valid SQLite SQL.
-6. Choose xAxis and yAxis.
+Rules:
+- Only use columns from the schema
+- Never invent tables or columns
+- Always alias aggregated columns
+- Return ONLY valid JSON
+- The SQL MUST match the user's question
 
-Important rules:
-- Only use columns from the schema.
-- Never invent tables or columns.
-- Always alias aggregated columns.
-- Return ONLY valid JSON.
+Possible analyses include:
+• revenue by region
+• quantity by category
+• revenue over time
 
-Examples:
+Example outputs:
 
-User: show revenue by region
+Question: show revenue by region
 
 {
  "sql": "SELECT r.name AS region, SUM(s.revenue) AS revenue FROM sales s JOIN regions r ON s.region_id = r.id GROUP BY r.name",
@@ -158,7 +153,7 @@ User: show revenue by region
  "title": "Revenue by Region"
 }
 
-User: total quantity sold by product category
+Question: total quantity sold by product category
 
 {
  "sql": "SELECT p.category AS category, SUM(s.quantity) AS quantity FROM sales s JOIN products p ON s.product_id = p.id GROUP BY p.category",
@@ -167,10 +162,13 @@ User: total quantity sold by product category
  "title": "Quantity by Category"
 }
 
-If the dataset cannot answer the question return:
+Question: monthly revenue trend
 
 {
- "error": "This dataset does not contain the information required."
+ "sql": "SELECT strftime('%Y-%m', date) AS month, SUM(revenue) AS revenue FROM sales GROUP BY month ORDER BY month",
+ "xAxis": "month",
+ "yAxis": "revenue",
+ "title": "Monthly Revenue Trend"
 }
 
 User question:
@@ -256,6 +254,8 @@ if(aiResponse.error){
 return res.json(aiResponse)
 }
 
+console.log("Generated SQL:", aiResponse.sql)
+
 validateSQL(aiResponse.sql)
 
 db.all(aiResponse.sql,[],(err,rows)=>{
@@ -301,10 +301,6 @@ const question = req.query.q || "show revenue by region"
 try{
 
 const aiResponse = await generateSQL(question)
-
-if(aiResponse.error){
-return res.json(aiResponse)
-}
 
 validateSQL(aiResponse.sql)
 
